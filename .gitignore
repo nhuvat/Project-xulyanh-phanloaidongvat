@@ -1,0 +1,13 @@
+# Dữ liệu và kết quả nặng: không đưa lên Git
+data/
+outputs/
+*.zip
+*.pt
+
+# Khóa truy cập, TUYỆT ĐỐI không commit
+kaggle.json
+
+# File sinh ra khi chạy
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
