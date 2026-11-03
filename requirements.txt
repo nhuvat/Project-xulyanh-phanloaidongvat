@@ -4,4 +4,4 @@ scikit-learn
 matplotlib
 numpy
 pillow
-gradio
+gradio>=5.0,<6.0

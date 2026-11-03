@@ -1,90 +1,118 @@
-# Phân loại động vật từ ảnh (Animals-10, transfer learning)
+# 🐾 Phân loại động vật từ ảnh — Animals-10
 
-Project đồ án: fine-tune mô hình pretrained (EfficientNet-B0 / ResNet) để phân loại 10 loài động vật,
-có đánh giá chi tiết, Grad-CAM và demo web. Thiết kế để làm xong trong khoảng 2 ngày.
+Đồ án môn **Xử lý ảnh**: phân loại ảnh động vật thành 10 lớp sử dụng deep learning và transfer learning. Repository gồm pipeline huấn luyện, đánh giá, giải thích mô hình Grad-CAM và giao diện web Gradio.
+
+## Công nghệ & phương pháp
+
+- **PyTorch / Torchvision**: xây dựng và huấn luyện mô hình.
+- **CNN transfer learning**: ResNet18, ResNet50, EfficientNet-B0; trọng số khởi tạo từ ImageNet (nếu không dùng `--scratch`).
+- **Image preprocessing**: Resize, CenterCrop, ToTensor, Normalize.
+- **Data augmentation**: RandomResizedCrop, HorizontalFlip, Rotation, ColorJitter (chỉ ở train).
+- **Dataset split**: phân tầng 70% train / 15% validation / 15% test, seed cố định.
+- **Training**: train classifier head trước, fine-tune toàn mạng sau; AdamW, cosine LR scheduler, mixed precision khi CUDA.
+- **Evaluation**: accuracy, precision/recall/F1, confusion matrix và danh sách lỗi.
+- **Explainability**: Grad-CAM làm nổi bật vùng ảnh đóng góp vào dự đoán.
+- **Web demo**: Gradio upload ảnh, trả về Top-3 nhãn cùng score.
+
+> Repo chưa kèm dataset và checkpoint đã huấn luyện. Không công bố accuracy cụ thể nếu chưa chạy `evaluate.py` trên test set.
 
 ## Cấu trúc
 
 | File | Vai trò |
 |---|---|
-| `config.py` | Đường dẫn, hằng số, bảng đổi tên lớp (Ý -> Anh) |
-| `data.py` | Đọc dữ liệu, augmentation, chia train/val/test 70/15/15 có phân tầng |
-| `nets.py` | Dựng mô hình (resnet18, resnet50, efficientnet_b0) |
-| `train.py` | Huấn luyện 2 giai đoạn (train head -> fine-tune toàn bộ) |
-| `evaluate.py` | Accuracy, F1, confusion matrix, danh sách ảnh sai |
-| `gradcam.py` | Grad-CAM trực quan hóa vùng mô hình chú ý |
-| `app.py` | Demo Gradio |
+| `config.py` | Cấu hình dữ liệu, kích thước ảnh, seed, tên lớp |
+| `data.py` | Dataset, preprocessing, augmentation, chia tập |
+| `nets.py` | ResNet18/50, EfficientNet-B0 và target layer Grad-CAM |
+| `train.py` | Huấn luyện head và fine-tuning |
+| `evaluate.py` | Metrics, confusion matrix, file ảnh dự đoán sai |
+| `gradcam.py` | Trực quan hóa vùng mô hình chú ý |
+| `app.py` | Web demo Gradio |
+| `requirements.txt` | Thư viện Python |
 
-## Chạy trên Google Colab
+## Chạy local
 
-1. Runtime -> Change runtime type -> **T4 GPU**.
-2. Upload toàn bộ file của project lên Colab (hoặc `git clone` repo của nhóm), rồi chạy lần lượt:
-
-```python
-# Ô 1: cài thư viện
-!pip install -q -r requirements.txt
-
-# Ô 2: tải dataset (upload file kaggle.json trước)
-!mkdir -p ~/.kaggle && cp kaggle.json ~/.kaggle/ && chmod 600 ~/.kaggle/kaggle.json
-!kaggle datasets download -d alessiocorrado99/animals10
-!unzip -q animals10.zip -d data
-# Sau bước này phải có thư mục data/raw-img/ chứa 10 thư mục lớp
-
-# Ô 3: kiểm tra dữ liệu và cách chia tập
-!python data.py
-```
-
-Nếu tải Kaggle bị lỗi: tải tay file zip từ trang dataset, upload lên Google Drive, mount Drive vào Colab rồi giải nén.
-
-## Thí nghiệm (chạy theo thứ tự)
+Khuyến nghị Python 3.10 hoặc 3.11.
 
 ```bash
-# 1) Baseline: ResNet18 pretrained, chỉ train lớp cuối (nhanh nhất)
-python train.py --model resnet18 --epochs_ft 0 --tag baseline_resnet18
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-# 2) Mô hình chính: EfficientNet-B0, train head 2 epoch rồi fine-tune 6 epoch
-python train.py --model efficientnet_b0
-
-# 3) (Nếu còn thời gian) Ablation: bỏ augmentation
-python train.py --model efficientnet_b0 --no_aug
-
-# 4) (Tùy chọn) ResNet50 để so sánh thêm
-python train.py --model resnet50
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-Mỗi lần chạy lưu `outputs/<tag>.pt` (checkpoint tốt nhất theo val acc) và `outputs/<tag>_history.json`.
+Dataset cần theo cấu trúc `data/raw-img/<class_name>/<image_file>`. Dataset Animals-10 có 10 thư mục lớp tên tiếng Ý. Xem phần Google Colab bên dưới để tải và chuẩn bị.
 
-## Đánh giá và giải thích mô hình
+### Huấn luyện
+
+```bash
+python data.py
+python train.py --model efficientnet_b0
+```
+
+Mô hình checkpoint tốt nhất theo validation accuracy được lưu tại `outputs/efficientnet_b0.pt`.
+
+### Đánh giá & Grad-CAM
 
 ```bash
 python evaluate.py --ckpt outputs/efficientnet_b0.pt
-python evaluate.py --ckpt outputs/baseline_resnet18.pt
-
-python gradcam.py --ckpt outputs/efficientnet_b0.pt --n 8          # ảnh ngẫu nhiên
-python gradcam.py --ckpt outputs/efficientnet_b0.pt --n 8 --wrong  # ảnh dự đoán sai
+python gradcam.py --ckpt outputs/efficientnet_b0.pt --n 8
+python gradcam.py --ckpt outputs/efficientnet_b0.pt --n 8 --wrong
 ```
 
-Kết quả nằm trong `outputs/`: `*_report.txt`, `*_confusion.png`, `*_errors.csv`, `*_gradcam.png`.
+Các báo cáo/ảnh trực quan nằm trong `outputs/`.
 
-## Demo
+### Chạy website demo
 
 ```bash
 python app.py --ckpt outputs/efficientnet_b0.pt
 ```
 
-Gradio in ra link public (`...gradio.live`), mở bằng điện thoại hoặc laptop để thử upload ảnh.
+Mở URL local do Gradio hiển thị (thường `http://127.0.0.1:7860`). Trên máy host, app bind `0.0.0.0`, port mặc định 7860 hoặc lấy từ biến môi trường `PORT`. Không dùng `share=True` trong môi trường deploy; hosting sẽ cấp URL công khai.
 
-## Gợi ý cho báo cáo
+Nếu checkpoint được đặt ở đường dẫn khác, đặt biến môi trường `MODEL_PATH` hoặc truyền `--ckpt`.
 
-- **Bảng so sánh**: baseline vs mô hình chính (và có/không augmentation) trên tập test.
-- **Phân tích lỗi**: xem cặp lớp hay nhầm trong log của `evaluate.py` và file `_errors.csv`.
-- **Grad-CAM**: chọn vài ảnh đúng và vài ảnh sai, nhận xét mô hình nhìn vào con vật hay nhìn vào nền.
-- **Hạn chế / hướng phát triển**: dữ liệu mất cân bằng (thử `--class_weights`), ảnh nhiều con vật, tách nền,
-  thêm mô hình khác, phân loại giống trong cùng loài.
+## Huấn luyện trên Google Colab (GPU)
 
-## Lưu ý
+1. Tạo notebook Colab và bật GPU (Runtime → Change runtime type → T4 GPU, nếu khả dụng).
+2. Clone repo và cài requirements.
+3. Tải dataset Animals-10 từ Kaggle; không đưa `kaggle.json` lên GitHub.
+4. Giải nén sao cho `data/raw-img/` có đủ 10 folder lớp.
+5. Chạy train/evaluate như lệnh phía trên; sao lưu checkpoint outputs ra Drive.
 
-- Chia tập được lưu ở `outputs/splits.json`, nên mọi thí nghiệm dùng chung một cách chia và so sánh được với nhau.
-  Nếu đổi dataset thì xóa file này.
-- Lưu thư mục `outputs/` lên Google Drive thường xuyên để không mất checkpoint khi Colab ngắt.
-- Chưa có số liệu accuracy thật trong repo: cần chạy huấn luyện để có kết quả cho báo cáo.
+Ví dụ:
+
+```bash
+git clone https://github.com/nhuvat/Project-xulyanh-phanloaidongvat.git
+cd Project-xulyanh-phanloaidongvat
+pip install -r requirements.txt
+```
+
+## Deploy thành website public
+
+Hugging Face Spaces hỗ trợ Gradio. Tham khảo `README_HF_SPACE.md` để thiết lập Space và checkpoint. **Chỉ push source code thì website chưa có khả năng dự đoán**, vì file model `.pt` và dataset hiện không nằm trong repo.
+
+## Push cập nhật lên GitHub
+
+```bash
+git status
+git add README.md README_HF_SPACE.md app.py
+git commit -m "Improve animal classification web demo and documentation"
+git push origin main
+```
+
+Nếu nhánh repo của bạn tên `master`, thay `main` bằng `master`.
+
+## Giới hạn & hướng phát triển
+
+- Mô hình chỉ phân loại trong 10 lớp Animals-10, không phải detector tổng quát cho mọi loài.
+- Ảnh chứa nhiều động vật, ảnh ngoài phân phối dataset hoặc ảnh chất lượng thấp có thể dự đoán sai.
+- Score không đồng nghĩa xác suất hiệu chỉnh chuẩn.
+- Có thể mở rộng: thêm dataset/lớp, cân bằng dữ liệu, so sánh model, Grad-CAM trên ảnh upload, tối ưu inference, và đóng gói API.
+
+## Dataset & quyền sử dụng
+
+Kiểm tra giấy phép và điều khoản của dataset Animals-10 cũng như pretrained weights trước khi phân phối ứng dụng hoặc dữ liệu.
